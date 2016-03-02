@@ -1,0 +1,117 @@
+From cb629c0d03cd0b2d866f59f25b4cf42f7e0c24c7 Mon Sep 17 00:00:00 2001
+From: chunseok lee <chunseok.lee@samsung.com>
+Date: Fri, 26 Feb 2016 09:15:07 +0900
+Subject: [PATCH] gc log
+
+---
+ src/gc/gc.cpp | 45 ++++++++++++++++++++++++++++++++++++++++++---
+ 1 file changed, 42 insertions(+), 3 deletions(-)
+
+diff --git a/src/gc/gc.cpp b/src/gc/gc.cpp
+index ca2cc94..a5417fc 100644
+--- a/src/gc/gc.cpp
++++ b/src/gc/gc.cpp
+@@ -20,6 +20,32 @@
+ 
+ #include "gcpriv.h"
+ 
++//** added by chunseoklee for GC test
++typedef struct {
++  int64_t max;
++  int64_t total;
++  int64_t count;
++} _st;
++
++typedef struct {
++  _st gen[3];
++} GCStat;
++
++static GCStat gcstat;
++
++void reset_gcstat() {
++  for(int i=0;i<3;i++) {
++    gcstat.gen[i].total = gcstat.gen[i].count = gcstat.gen[i].max = 0;
++  }
++}
++
++void print_gcstat() {
++  for(int i=0;i<3;i++) {
++    printf("gen %d, total: %lld, count: %lld, max: %lld\n",i, gcstat.gen[i].total, gcstat.gen[i].count, gcstat.gen[i].max);
++  }
++}
++
++
+ #define USE_INTROSORT
+ 
+ #if defined(GC_PROFILING) || defined(FEATURE_EVENT_TRACE)
+@@ -16165,6 +16191,8 @@ void gc_heap::init_records()
+ 
+ int gc_heap::garbage_collect (int n)
+ {
++  //long long start_time = GetHighPrecisionTimeStamp();
++  //printf("gc started at %lld\n", start_time);
+     //TODO BACKGROUND_GC remove these when ready
+ #ifndef NO_CATCH_HANDLERS
+     PAL_TRY
+@@ -16312,8 +16340,7 @@ int gc_heap::garbage_collect (int n)
+                                             );
+ 
+         STRESS_LOG1(LF_GCROOTS|LF_GC|LF_GCALLOC, LL_INFO10, 
+-                "condemned generation num: %d\n", settings.condemned_generation);
+-
++                    "condemned generation num: %d\n", settings.condemned_generation);
+         record_gcs_during_no_gc();
+ 
+         if (settings.condemned_generation > 1)
+@@ -16627,6 +16654,8 @@ done:
+ #endif //NO_CATCH_HANDLERS
+ 
+     int gn = settings.condemned_generation;
++    //long long end_time = GetHighPrecisionTimeStamp();
++    //printf("gc gen %d processed for %lld\n",gn, end_time-start_time);
+     return gn;
+ }
+ 
+@@ -33392,6 +33421,7 @@ HRESULT AllocateCFinalize(CFinalize **pCFinalize)
+ // init the instance heap
+ HRESULT GCHeap::Init(size_t hn)
+ {
++  reset_gcstat();
+     HRESULT hres = S_OK;
+ 
+     //Initialize all of the instance members.
+@@ -35050,6 +35080,7 @@ unsigned GCHeap::GetGcCount()
+ size_t
+ GCHeap::GarbageCollectGeneration (unsigned int gen, gc_reason reason)
+ {
++  long long s = GetHighPrecisionTimeStamp();
+     dprintf (2, ("triggered a GC!"));
+ 
+ #ifdef MULTIPLE_HEAPS
+@@ -35254,7 +35285,13 @@ GCHeap::GarbageCollectGeneration (unsigned int gen, gc_reason reason)
+         FinalizerThread::EnableFinalization();
+     }
+ #endif // FEATURE_PREMORTEM_FINALIZATION
+-
++    long long t = GetHighPrecisionTimeStamp();
++    int64_t elapsed = t-s;
++    int gc_generation = pGenGCHeap->settings.condemned_generation;
++    if(gcstat.gen[gc_generation].max < elapsed) gcstat.gen[gc_generation].max = elapsed;
++    gcstat.gen[gc_generation].total += elapsed;
++    gcstat.gen[gc_generation].count++;
++    //printf("GarbageCollectionGeneration's condemned_generation_number:%d duration:%lld\n",gc_generation,elapsed);
+     return dd_collection_count (dd);
+ }
+ 
+@@ -35276,6 +35313,8 @@ size_t      GCHeap::GetTotalBytesInUse ()
+ 
+ int GCHeap::CollectionCount (int generation, int get_bgc_fgc_count)
+ {
++  print_gcstat();
++  reset_gcstat();
+     if (get_bgc_fgc_count != 0)
+     {
+ #ifdef BACKGROUND_GC
+-- 
+2.5.0.400.gff86faf
+
